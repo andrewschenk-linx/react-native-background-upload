@@ -3,11 +3,13 @@
 #import <React/RCTEventEmitter.h>
 #import <React/RCTBridgeModule.h>
 #import <Photos/Photos.h>
+#import "SKSerialInputStream.h"
 
 @interface VydiaRNFileUploader : RCTEventEmitter <RCTBridgeModule, NSURLSessionTaskDelegate>
 {
   NSMutableDictionary *_responsesData;
 }
+@property (strong) SKSerialInputStream *inputStream;
 @end
 
 @implementation VydiaRNFileUploader
@@ -152,7 +154,8 @@ RCT_EXPORT_METHOD(startUpload:(NSDictionary *)options resolve:(RCTPromiseResolve
     NSString *customUploadId = options[@"customUploadId"];
     NSDictionary *headers = options[@"headers"];
     NSDictionary *parameters = options[@"parameters"];
-
+    NSString *contentLength = options[@"contentLength"];
+    
     @try {
         NSURL *requestUrl = [NSURL URLWithString: uploadUrl];
         if (requestUrl == nil) {
@@ -188,15 +191,17 @@ RCT_EXPORT_METHOD(startUpload:(NSDictionary *)options resolve:(RCTPromiseResolve
             dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
         }
 
-        NSURLSessionDataTask *uploadTask;
+        NSURLSessionUploadTask *uploadTask;
 
         if ([uploadType isEqualToString:@"multipart"]) {
             NSString *uuidStr = [[NSUUID UUID] UUIDString];
             [request setValue:[NSString stringWithFormat:@"multipart/form-data; boundary=%@", uuidStr] forHTTPHeaderField:@"Content-Type"];
-
-            NSData *httpBody = [self createBodyWithBoundary:uuidStr path:fileURI parameters: parameters fieldName:fieldName];
-            [request setHTTPBody: httpBody];
-
+            if (contentLength) {
+                [request setValue:contentLength forHTTPHeaderField:@"Content-Length"];
+            }
+            
+            [self createBodyStreamWithBoundary:uuidStr path:fileURI parameters: parameters fieldName:fieldName];
+            
             uploadTask = [[self urlSession] uploadTaskWithStreamedRequest:request];
         } else {
             if (parameters.count > 0) {
@@ -234,6 +239,7 @@ RCT_EXPORT_METHOD(cancelUpload: (NSString *)cancelUploadId resolve:(RCTPromiseRe
     resolve([NSNumber numberWithBool:YES]);
 }
 
+/*
 - (NSData *)createBodyWithBoundary:(NSString *)boundary
                          path:(NSString *)path
                          parameters:(NSDictionary *)parameters
@@ -264,6 +270,59 @@ RCT_EXPORT_METHOD(cancelUpload: (NSString *)cancelUploadId resolve:(RCTPromiseRe
     [httpBody appendData:[[NSString stringWithFormat:@"--%@--\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
 
     return httpBody;
+}
+ */
+- (void)createBodyStreamWithBoundary:(NSString *)boundary
+                                path:(NSString *)path
+                          parameters:(NSDictionary *)parameters
+                           fieldName:(NSString *)fieldName {
+    
+    NSMutableData *prefixData = [NSMutableData data];
+    NSMutableData *postfixData = [NSMutableData data];
+    NSMutableData *boundaryData = [NSMutableData data];
+    
+    // resolve path
+    NSURL *fileUri = [NSURL URLWithString: path];
+    //NSString *pathWithoutProtocol = [fileUri path];
+    
+    // make the file stream
+    NSInputStream *fileStream = [NSInputStream inputStreamWithURL:fileUri];
+    NSString *filename  = [path lastPathComponent];
+    NSString *mimetype  = [self guessMIMETypeFromFileName:path];
+    
+    [parameters enumerateKeysAndObjectsUsingBlock:^(NSString *parameterKey, NSString *parameterValue, BOOL *stop) {
+        [prefixData appendData:[[NSString stringWithFormat:@"--%@\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
+        [prefixData appendData:[[NSString stringWithFormat:@"Content-Disposition: form-data; name=\"%@\"\r\n\r\n", parameterKey] dataUsingEncoding:NSUTF8StringEncoding]];
+        [prefixData appendData:[[NSString stringWithFormat:@"%@\r\n", parameterValue] dataUsingEncoding:NSUTF8StringEncoding]];
+    }];
+    
+    [prefixData appendData:[[NSString stringWithFormat:@"--%@\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
+    [prefixData appendData:[[NSString stringWithFormat:@"Content-Disposition: form-data; name=\"%@\"; filename=\"%@\"\r\n", fieldName, filename] dataUsingEncoding:NSUTF8StringEncoding]];
+    [prefixData appendData:[[NSString stringWithFormat:@"Content-Type: %@\r\n\r\n", mimetype] dataUsingEncoding:NSUTF8StringEncoding]];
+    
+    NSString *prefixStr = [[NSString alloc] initWithData:prefixData encoding:NSUTF8StringEncoding];
+    NSLog(@"prefixStr:%@", prefixStr);
+    
+    [postfixData appendData:[@"\r\n" dataUsingEncoding:NSUTF8StringEncoding]];
+    
+    NSString *postfixStr = [[NSString alloc] initWithData:postfixData encoding:NSUTF8StringEncoding];
+    NSLog(@"postfixStr:%@", postfixStr);
+    
+    [boundaryData appendData:[[NSString stringWithFormat:@"--%@--\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
+    
+    NSString *boundaryStr = [[NSString alloc] initWithData:boundaryData encoding:NSUTF8StringEncoding];
+    NSLog(@"boundaryStr:%@", boundaryStr);
+    
+    NSInputStream *boundaryStream = [NSInputStream inputStreamWithData:boundaryData];
+    // [httpBody appendData:[[NSString stringWithFormat:@"--%@--\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
+    
+    NSArray * dataStreams = @[
+                              [NSInputStream inputStreamWithData:prefixData],
+                              fileStream,
+                              [NSInputStream inputStreamWithData:postfixData],
+                              boundaryStream
+                              ];
+    self.inputStream = [[SKSerialInputStream alloc] initWithInputStreams:dataStreams];
 }
 
 - (NSURLSession *)urlSession {
@@ -337,6 +396,10 @@ totalBytesExpectedToSend:(int64_t)totalBytesExpectedToSend {
     } else {
         [responseData appendData:data];
     }
+}
+
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task needNewBodyStream:(nonnull void (^)(NSInputStream * _Nullable))completionHandler {
+    completionHandler(self.inputStream);
 }
 
 @end
