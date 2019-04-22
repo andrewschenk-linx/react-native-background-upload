@@ -6,10 +6,9 @@
 #import "SKSerialInputStream.h"
 
 @interface VydiaRNFileUploader : RCTEventEmitter <RCTBridgeModule, NSURLSessionTaskDelegate>
-{
-  NSMutableDictionary *_responsesData;
-}
 @property (strong) SKSerialInputStream *inputStream;
+@property (strong) NSURLSession *mySession;
+@property (strong) NSMutableDictionary *responsesData;
 @end
 
 @implementation VydiaRNFileUploader
@@ -20,34 +19,37 @@ RCT_EXPORT_MODULE();
 static int uploadId = 0;
 static RCTEventEmitter* staticEventEmitter = nil;
 static NSString *BACKGROUND_SESSION_ID = @"ReactNativeBackgroundUpload";
-NSURLSession *_urlSession = nil;
 
 + (BOOL)requiresMainQueueSetup {
     return NO;
 }
 
 -(id) init {
-  self = [super init];
-  if (self) {
-    staticEventEmitter = self;
-    _responsesData = [NSMutableDictionary dictionary];
-  }
-  return self;
+    self = [super init];
+    if (self) {
+        staticEventEmitter = self;
+        self.responsesData = [NSMutableDictionary dictionary];
+        
+        self.mySession = [NSURLSession sessionWithConfiguration:[NSURLSessionConfiguration defaultSessionConfiguration]
+                                                       delegate:self
+                                                  delegateQueue:[NSOperationQueue mainQueue]];
+    }
+    return self;
 }
 
 - (void)_sendEventWithName:(NSString *)eventName body:(id)body {
-  if (staticEventEmitter == nil)
-    return;
-  [staticEventEmitter sendEventWithName:eventName body:body];
+    if (staticEventEmitter == nil)
+        return;
+    [staticEventEmitter sendEventWithName:eventName body:body];
 }
 
 - (NSArray<NSString *> *)supportedEvents {
     return @[
-        @"RNFileUploader-progress",
-        @"RNFileUploader-error",
-        @"RNFileUploader-cancelled",
-        @"RNFileUploader-completed"
-    ];
+             @"RNFileUploader-progress",
+             @"RNFileUploader-error",
+             @"RNFileUploader-cancelled",
+             @"RNFileUploader-completed"
+             ];
 }
 
 /*
@@ -65,7 +67,7 @@ RCT_EXPORT_METHOD(getFileInfo:(NSString *)path resolve:(RCTPromiseResolveBlock)r
         NSMutableDictionary *params = [NSMutableDictionary dictionaryWithObjectsAndKeys: name, @"name", nil];
         [params setObject:extension forKey:@"extension"];
         [params setObject:[NSNumber numberWithBool:exists] forKey:@"exists"];
-
+        
         if (exists)
         {
             [params setObject:[self guessMIMETypeFromFileName:name] forKey:@"mimeType"];
@@ -86,7 +88,7 @@ RCT_EXPORT_METHOD(getFileInfo:(NSString *)path resolve:(RCTPromiseResolveBlock)r
 
 /*
  Borrowed from http://stackoverflow.com/questions/2439020/wheres-the-iphone-mime-type-database
-*/
+ */
 - (NSString *)guessMIMETypeFromFileName: (NSString *)fileName {
     CFStringRef UTI = UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, (__bridge CFStringRef)[fileName pathExtension], NULL);
     CFStringRef MIMEType = UTTypeCopyPreferredTagWithClass(UTI, kUTTagClassMIMEType);
@@ -113,10 +115,10 @@ RCT_EXPORT_METHOD(getFileInfo:(NSString *)path resolve:(RCTPromiseResolveBlock)r
     NSString *pathToWrite = [NSTemporaryDirectory() stringByAppendingPathComponent:[[NSUUID UUID] UUIDString]];
     NSURL *pathUrl = [NSURL fileURLWithPath:pathToWrite];
     NSString *fileURI = pathUrl.absoluteString;
-
+    
     PHAssetResourceRequestOptions *options = [PHAssetResourceRequestOptions new];
     options.networkAccessAllowed = YES;
-
+    
     [[PHAssetResourceManager defaultManager] writeDataForAssetResource:assetResource toFile:pathUrl options:options completionHandler:^(NSError * _Nullable e) {
         if (e == nil) {
             completionHandler(fileURI, nil);
@@ -145,7 +147,7 @@ RCT_EXPORT_METHOD(startUpload:(NSDictionary *)options resolve:(RCTPromiseResolve
     {
         thisUploadId = uploadId++;
     }
-
+    
     NSString *uploadUrl = options[@"url"];
     __block NSString *fileURI = options[@"path"];
     NSString *method = options[@"method"] ?: @"POST";
@@ -161,10 +163,11 @@ RCT_EXPORT_METHOD(startUpload:(NSDictionary *)options resolve:(RCTPromiseResolve
         if (requestUrl == nil) {
             @throw @"Request cannot be nil";
         }
-
-        NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:requestUrl];
+        
+        NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:requestUrl cachePolicy:NSURLRequestReloadIgnoringCacheData timeoutInterval:10];
         [request setHTTPMethod: method];
-
+        
+        
         [headers enumerateKeysAndObjectsUsingBlock:^(id  _Nonnull key, id  _Nonnull val, BOOL * _Nonnull stop) {
             if ([val respondsToSelector:@selector(stringValue)]) {
                 val = [val stringValue];
@@ -173,8 +176,8 @@ RCT_EXPORT_METHOD(startUpload:(NSDictionary *)options resolve:(RCTPromiseResolve
                 [request setValue:val forHTTPHeaderField:key];
             }
         }];
-
-
+        
+        
         // asset library files have to be copied over to a temp file.  they can't be uploaded directly
         if ([fileURI hasPrefix:@"assets-library"]) {
             dispatch_group_t group = dispatch_group_create();
@@ -190,9 +193,9 @@ RCT_EXPORT_METHOD(startUpload:(NSDictionary *)options resolve:(RCTPromiseResolve
             }];
             dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
         }
-
+        
         NSURLSessionUploadTask *uploadTask;
-
+        
         if ([uploadType isEqualToString:@"multipart"]) {
             NSString *uuidStr = [[NSUUID UUID] UUIDString];
             [request setValue:[NSString stringWithFormat:@"multipart/form-data; boundary=%@", uuidStr] forHTTPHeaderField:@"Content-Type"];
@@ -202,18 +205,18 @@ RCT_EXPORT_METHOD(startUpload:(NSDictionary *)options resolve:(RCTPromiseResolve
             
             [self createBodyStreamWithBoundary:uuidStr path:fileURI parameters: parameters fieldName:fieldName];
             
-            uploadTask = [[self urlSession] uploadTaskWithStreamedRequest:request];
+            uploadTask = [self.mySession uploadTaskWithStreamedRequest:request];
         } else {
             if (parameters.count > 0) {
                 reject(@"RN Uploader", @"Parameters supported only in multipart type", nil);
                 return;
             }
-
-            uploadTask = [[self urlSession] uploadTaskWithRequest:request fromFile:[NSURL URLWithString: fileURI]];
+            
+            uploadTask = [self.mySession uploadTaskWithRequest:request fromFile:[NSURL URLWithString: fileURI]];
         }
-
+        
         uploadTask.taskDescription = customUploadId ? customUploadId : [NSString stringWithFormat:@"%i", thisUploadId];
-
+        
         [uploadTask resume];
         resolve(uploadTask.taskDescription);
     }
@@ -228,7 +231,7 @@ RCT_EXPORT_METHOD(startUpload:(NSDictionary *)options resolve:(RCTPromiseResolve
  * Event "cancelled" will be fired when upload is cancelled.
  */
 RCT_EXPORT_METHOD(cancelUpload: (NSString *)cancelUploadId resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject) {
-    [_urlSession getTasksWithCompletionHandler:^(NSArray *dataTasks, NSArray *uploadTasks, NSArray *downloadTasks) {
+    [self.mySession getTasksWithCompletionHandler:^(NSArray *dataTasks, NSArray *uploadTasks, NSArray *downloadTasks) {
         for (NSURLSessionTask *uploadTask in uploadTasks) {
             if ([uploadTask.taskDescription isEqualToString:cancelUploadId]){
                 // == checks if references are equal, while isEqualToString checks the string value
@@ -239,39 +242,6 @@ RCT_EXPORT_METHOD(cancelUpload: (NSString *)cancelUploadId resolve:(RCTPromiseRe
     resolve([NSNumber numberWithBool:YES]);
 }
 
-/*
-- (NSData *)createBodyWithBoundary:(NSString *)boundary
-                         path:(NSString *)path
-                         parameters:(NSDictionary *)parameters
-                         fieldName:(NSString *)fieldName {
-
-    NSMutableData *httpBody = [NSMutableData data];
-
-    // resolve path
-    NSURL *fileUri = [NSURL URLWithString: path];
-    NSString *pathWithoutProtocol = [fileUri path];
-
-    NSData *data = [[NSFileManager defaultManager] contentsAtPath:pathWithoutProtocol];
-    NSString *filename  = [path lastPathComponent];
-    NSString *mimetype  = [self guessMIMETypeFromFileName:path];
-
-    [parameters enumerateKeysAndObjectsUsingBlock:^(NSString *parameterKey, NSString *parameterValue, BOOL *stop) {
-        [httpBody appendData:[[NSString stringWithFormat:@"--%@\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
-        [httpBody appendData:[[NSString stringWithFormat:@"Content-Disposition: form-data; name=\"%@\"\r\n\r\n", parameterKey] dataUsingEncoding:NSUTF8StringEncoding]];
-        [httpBody appendData:[[NSString stringWithFormat:@"%@\r\n", parameterValue] dataUsingEncoding:NSUTF8StringEncoding]];
-    }];
-
-    [httpBody appendData:[[NSString stringWithFormat:@"--%@\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
-    [httpBody appendData:[[NSString stringWithFormat:@"Content-Disposition: form-data; name=\"%@\"; filename=\"%@\"\r\n", fieldName, filename] dataUsingEncoding:NSUTF8StringEncoding]];
-    [httpBody appendData:[[NSString stringWithFormat:@"Content-Type: %@\r\n\r\n", mimetype] dataUsingEncoding:NSUTF8StringEncoding]];
-    [httpBody appendData:data];
-    [httpBody appendData:[@"\r\n" dataUsingEncoding:NSUTF8StringEncoding]];
-
-    [httpBody appendData:[[NSString stringWithFormat:@"--%@--\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
-
-    return httpBody;
-}
- */
 - (void)createBodyStreamWithBoundary:(NSString *)boundary
                                 path:(NSString *)path
                           parameters:(NSDictionary *)parameters
@@ -283,7 +253,6 @@ RCT_EXPORT_METHOD(cancelUpload: (NSString *)cancelUploadId resolve:(RCTPromiseRe
     
     // resolve path
     NSURL *fileUri = [NSURL URLWithString: path];
-    //NSString *pathWithoutProtocol = [fileUri path];
     
     // make the file stream
     NSInputStream *fileStream = [NSInputStream inputStreamWithURL:fileUri];
@@ -300,21 +269,11 @@ RCT_EXPORT_METHOD(cancelUpload: (NSString *)cancelUploadId resolve:(RCTPromiseRe
     [prefixData appendData:[[NSString stringWithFormat:@"Content-Disposition: form-data; name=\"%@\"; filename=\"%@\"\r\n", fieldName, filename] dataUsingEncoding:NSUTF8StringEncoding]];
     [prefixData appendData:[[NSString stringWithFormat:@"Content-Type: %@\r\n\r\n", mimetype] dataUsingEncoding:NSUTF8StringEncoding]];
     
-    NSString *prefixStr = [[NSString alloc] initWithData:prefixData encoding:NSUTF8StringEncoding];
-    NSLog(@"prefixStr:%@", prefixStr);
-    
     [postfixData appendData:[@"\r\n" dataUsingEncoding:NSUTF8StringEncoding]];
-    
-    NSString *postfixStr = [[NSString alloc] initWithData:postfixData encoding:NSUTF8StringEncoding];
-    NSLog(@"postfixStr:%@", postfixStr);
-    
     [boundaryData appendData:[[NSString stringWithFormat:@"--%@--\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
     
-    NSString *boundaryStr = [[NSString alloc] initWithData:boundaryData encoding:NSUTF8StringEncoding];
-    NSLog(@"boundaryStr:%@", boundaryStr);
     
     NSInputStream *boundaryStream = [NSInputStream inputStreamWithData:boundaryData];
-    // [httpBody appendData:[[NSString stringWithFormat:@"--%@--\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
     
     NSArray * dataStreams = @[
                               [NSInputStream inputStreamWithData:prefixData],
@@ -323,15 +282,6 @@ RCT_EXPORT_METHOD(cancelUpload: (NSString *)cancelUploadId resolve:(RCTPromiseRe
                               boundaryStream
                               ];
     self.inputStream = [[SKSerialInputStream alloc] initWithInputStreams:dataStreams];
-}
-
-- (NSURLSession *)urlSession {
-    if (_urlSession == nil) {
-        NSURLSessionConfiguration *sessionConfiguration = [NSURLSessionConfiguration backgroundSessionConfigurationWithIdentifier:BACKGROUND_SESSION_ID];
-        _urlSession = [NSURLSession sessionWithConfiguration:sessionConfiguration delegate:self delegateQueue:nil];
-    }
-
-    return _urlSession;
 }
 
 #pragma NSURLSessionTaskDelegate
@@ -347,15 +297,15 @@ didCompleteWithError:(NSError *)error {
         [data setObject:[NSNumber numberWithInteger:response.statusCode] forKey:@"responseCode"];
     }
     //Add data that was collected earlier by the didReceiveData method
-    NSMutableData *responseData = _responsesData[@(task.taskIdentifier)];
+    NSMutableData *responseData = self.responsesData[@(task.taskIdentifier)];
     if (responseData) {
-        [_responsesData removeObjectForKey:@(task.taskIdentifier)];
+        [self.responsesData removeObjectForKey:@(task.taskIdentifier)];
         NSString *response = [[NSString alloc] initWithData:responseData encoding:NSUTF8StringEncoding];
         [data setObject:response forKey:@"responseBody"];
     } else {
         [data setObject:[NSNull null] forKey:@"responseBody"];
     }
-
+    
     if (error == nil)
     {
         [self _sendEventWithName:@"RNFileUploader-completed" body:data];
@@ -379,7 +329,7 @@ totalBytesExpectedToSend:(int64_t)totalBytesExpectedToSend {
     float progress = -1;
     if (totalBytesExpectedToSend > 0) //see documentation.  For unknown size it's -1 (NSURLSessionTransferSizeUnknown)
     {
-        progress = 100.0 * (float)totalBytesSent / (float)totalBytesExpectedToSend;
+        progress = (float)totalBytesSent / (float)totalBytesExpectedToSend;
     }
     [self _sendEventWithName:@"RNFileUploader-progress" body:@{ @"id": task.taskDescription, @"progress": [NSNumber numberWithFloat:progress] }];
 }
@@ -389,10 +339,10 @@ totalBytesExpectedToSend:(int64_t)totalBytesExpectedToSend {
         return;
     }
     //Hold returned data so it can be picked up by the didCompleteWithError method later
-    NSMutableData *responseData = _responsesData[@(dataTask.taskIdentifier)];
+    NSMutableData *responseData = self.responsesData[@(dataTask.taskIdentifier)];
     if (!responseData) {
         responseData = [NSMutableData dataWithData:data];
-        _responsesData[@(dataTask.taskIdentifier)] = responseData;
+        self.responsesData[@(dataTask.taskIdentifier)] = responseData;
     } else {
         [responseData appendData:data];
     }
