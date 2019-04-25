@@ -273,7 +273,7 @@ RCT_EXPORT_METHOD(cancelUpload: (NSString *)cancelUploadId resolve:(RCTPromiseRe
     [prefixData appendData:[[NSString stringWithFormat:@"--%@\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
     [prefixData appendData:[[NSString stringWithFormat:@"Content-Disposition: form-data; name=\"%@\"; filename=\"%@\"\r\n", fieldName, filename] dataUsingEncoding:NSUTF8StringEncoding]];
     [prefixData appendData:[[NSString stringWithFormat:@"Content-Type: %@\r\n\r\n", mimetype] dataUsingEncoding:NSUTF8StringEncoding]];
-
+    
     [postfixData appendData:[@"\r\n" dataUsingEncoding:NSUTF8StringEncoding]];
     [boundaryData appendData:[[NSString stringWithFormat:@"--%@--\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
     
@@ -318,7 +318,7 @@ RCT_EXPORT_METHOD(cancelUpload: (NSString *)cancelUploadId resolve:(RCTPromiseRe
     
     [postfixData appendData:[@"\r\n" dataUsingEncoding:NSUTF8StringEncoding]];
     [boundaryData appendData:[[NSString stringWithFormat:@"--%@--\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
-
+    
     
     [bodyData appendData:prefixData];
     [bodyData appendData:[NSData dataWithContentsOfURL:fileUri]];
@@ -360,13 +360,26 @@ RCT_EXPORT_METHOD(cancelUpload: (NSString *)cancelUploadId resolve:(RCTPromiseRe
     [postfixData appendData:[@"\r\n" dataUsingEncoding:NSUTF8StringEncoding]];
     [boundaryData appendData:[[NSString stringWithFormat:@"--%@--\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
     
-    NSURL *tmpDirURL = [NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES];
-    NSURL *fileURL = [tmpDirURL URLByAppendingPathComponent:@"tmpUploadData2"];
-
+    NSURL *temporaryDirectoryURL = [NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES];
+    NSURL *fileURL = [temporaryDirectoryURL URLByAppendingPathComponent:@"tmpUploadData2"];
+    
+    if (![[NSFileManager defaultManager] fileExistsAtPath:fileURL.path]) {
+        //NSLog(@"must make file before fileHandle tries writing");
+        NSError *blankWriteErr = nil;
+        [@"" writeToURL:fileURL atomically:YES encoding:NSUTF8StringEncoding error:&blankWriteErr];
+        if (blankWriteErr) {
+            NSLog(@"error writing blank file --> %@", blankWriteErr);
+            [self _sendEventWithName:@"RNFileUploader-error" body:@"File Error"];
+            return nil;
+        }
+    }
+    
     NSError *fileHandleErr = nil;
     NSFileHandle *fileHandle = [NSFileHandle fileHandleForWritingToURL:fileURL error:&fileHandleErr];
     if (fileHandleErr) {
         NSLog(@"File handle err --> %@", [fileHandleErr description]);
+        [self _sendEventWithName:@"RNFileUploader-error" body:@"File Error"];
+        return nil;
     }
     
     [fileHandle writeData:prefixData];
@@ -375,7 +388,7 @@ RCT_EXPORT_METHOD(cancelUpload: (NSString *)cancelUploadId resolve:(RCTPromiseRe
     [fileHandle writeData:boundaryData];
     [fileHandle closeFile];
     
-   // NSLog(@"%@", fileURL);
+    // NSLog(@"%@", fileURL);
     return fileURL;
 }
 
