@@ -5,7 +5,7 @@
 #import <Photos/Photos.h>
 #import "SKSerialInputStream.h"
 
-@interface VydiaRNFileUploader : RCTEventEmitter <RCTBridgeModule, NSURLSessionTaskDelegate>
+@interface VydiaRNFileUploader : RCTEventEmitter <RCTBridgeModule, NSURLSessionDelegate, NSURLSessionTaskDelegate>
 @property (strong) SKSerialInputStream *inputStream;
 @property (strong) NSURLSession *mySession;
 @property (strong) NSMutableDictionary *responsesData;
@@ -30,7 +30,10 @@ static NSString *BACKGROUND_SESSION_ID = @"ReactNativeBackgroundUpload";
         staticEventEmitter = self;
         self.responsesData = [NSMutableDictionary dictionary];
         
-        self.mySession = [NSURLSession sessionWithConfiguration:[NSURLSessionConfiguration defaultSessionConfiguration]
+        NSURLSessionConfiguration * config = [NSURLSessionConfiguration backgroundSessionConfigurationWithIdentifier:@"MyBackgroundSessionConfig"];
+        config.discretionary = YES;
+        
+        self.mySession = [NSURLSession sessionWithConfiguration:config
                                                        delegate:self
                                                   delegateQueue:[NSOperationQueue mainQueue]];
     }
