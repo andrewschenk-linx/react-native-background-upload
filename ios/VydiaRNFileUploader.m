@@ -205,13 +205,7 @@ RCT_EXPORT_METHOD(startUpload:(NSDictionary *)options resolve:(RCTPromiseResolve
             if (contentLength) {
                 [request setValue:contentLength forHTTPHeaderField:@"Content-Length"];
             }
-            
-            //NSMutableData * httpData = [self createBodyDataWithBoundary:uuidStr path:fileURI parameters:parameters fieldName:fieldName];
-            //[self createBodyStreamWithBoundary:uuidStr path:fileURI parameters: parameters fieldName:fieldName];
-            //[request setHTTPBodyStream:self.inputStream];
-            
-            //uploadTask = [self.mySession uploadTaskWithStreamedRequest:request];
-            //uploadTask = [self.mySession uploadTaskWithRequest:request fromData:httpData];
+
             NSURL *tmpFile =[self createBodyDataFileWithBoundary:uuidStr path:fileURI parameters:parameters fieldName:fieldName];
             uploadTask = [self.mySession uploadTaskWithRequest:request fromFile:tmpFile];
         } else {
@@ -261,87 +255,6 @@ RCT_EXPORT_METHOD(cancelAllUploads:(RCTPromiseResolveBlock)resolve reject:(RCTPr
         }
     }];
     resolve([NSNumber numberWithBool:YES]);
-}
-
-- (void)createBodyStreamWithBoundary:(NSString *)boundary
-                                path:(NSString *)path
-                          parameters:(NSDictionary *)parameters
-                           fieldName:(NSString *)fieldName {
-    
-    NSMutableData *prefixData = [NSMutableData data];
-    NSMutableData *postfixData = [NSMutableData data];
-    NSMutableData *boundaryData = [NSMutableData data];
-    
-    // resolve path
-    NSURL *fileUri = [NSURL URLWithString: path];
-    
-    // make the file stream
-    NSInputStream *fileStream = [NSInputStream inputStreamWithURL:fileUri];
-    NSString *filename  = [path lastPathComponent];
-    NSString *mimetype  = [self guessMIMETypeFromFileName:path];
-    
-    [parameters enumerateKeysAndObjectsUsingBlock:^(NSString *parameterKey, NSString *parameterValue, BOOL *stop) {
-        [prefixData appendData:[[NSString stringWithFormat:@"--%@\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
-        [prefixData appendData:[[NSString stringWithFormat:@"Content-Disposition: form-data; name=\"%@\"\r\n\r\n", parameterKey] dataUsingEncoding:NSUTF8StringEncoding]];
-        [prefixData appendData:[[NSString stringWithFormat:@"%@\r\n", parameterValue] dataUsingEncoding:NSUTF8StringEncoding]];
-    }];
-    
-    [prefixData appendData:[[NSString stringWithFormat:@"--%@\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
-    [prefixData appendData:[[NSString stringWithFormat:@"Content-Disposition: form-data; name=\"%@\"; filename=\"%@\"\r\n", fieldName, filename] dataUsingEncoding:NSUTF8StringEncoding]];
-    [prefixData appendData:[[NSString stringWithFormat:@"Content-Type: %@\r\n\r\n", mimetype] dataUsingEncoding:NSUTF8StringEncoding]];
-    
-    [postfixData appendData:[@"\r\n" dataUsingEncoding:NSUTF8StringEncoding]];
-    [boundaryData appendData:[[NSString stringWithFormat:@"--%@--\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
-    
-    
-    NSInputStream *boundaryStream = [NSInputStream inputStreamWithData:boundaryData];
-    
-    NSArray * dataStreams = @[
-                              [NSInputStream inputStreamWithData:prefixData],
-                              fileStream,
-                              [NSInputStream inputStreamWithData:postfixData],
-                              boundaryStream
-                              ];
-    self.inputStream = [[SKSerialInputStream alloc] initWithInputStreams:dataStreams];
-}
-
-- (NSMutableData *)createBodyDataWithBoundary:(NSString *)boundary
-                                         path:(NSString *)path
-                                   parameters:(NSDictionary *)parameters
-                                    fieldName:(NSString *)fieldName {
-    
-    NSMutableData *bodyData = [NSMutableData data];
-    NSMutableData *prefixData = [NSMutableData data];
-    NSMutableData *postfixData = [NSMutableData data];
-    NSMutableData *boundaryData = [NSMutableData data];
-    
-    // resolve path
-    NSURL *fileUri = [NSURL URLWithString: path];
-    
-    // make the file stream
-    NSString *filename  = [path lastPathComponent];
-    NSString *mimetype  = [self guessMIMETypeFromFileName:path];
-    
-    [parameters enumerateKeysAndObjectsUsingBlock:^(NSString *parameterKey, NSString *parameterValue, BOOL *stop) {
-        [prefixData appendData:[[NSString stringWithFormat:@"--%@\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
-        [prefixData appendData:[[NSString stringWithFormat:@"Content-Disposition: form-data; name=\"%@\"\r\n\r\n", parameterKey] dataUsingEncoding:NSUTF8StringEncoding]];
-        [prefixData appendData:[[NSString stringWithFormat:@"%@\r\n", parameterValue] dataUsingEncoding:NSUTF8StringEncoding]];
-    }];
-    
-    [prefixData appendData:[[NSString stringWithFormat:@"--%@\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
-    [prefixData appendData:[[NSString stringWithFormat:@"Content-Disposition: form-data; name=\"%@\"; filename=\"%@\"\r\n", fieldName, filename] dataUsingEncoding:NSUTF8StringEncoding]];
-    [prefixData appendData:[[NSString stringWithFormat:@"Content-Type: %@\r\n\r\n", mimetype] dataUsingEncoding:NSUTF8StringEncoding]];
-    
-    [postfixData appendData:[@"\r\n" dataUsingEncoding:NSUTF8StringEncoding]];
-    [boundaryData appendData:[[NSString stringWithFormat:@"--%@--\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
-    
-    
-    [bodyData appendData:prefixData];
-    [bodyData appendData:[NSData dataWithContentsOfURL:fileUri]];
-    [bodyData appendData:postfixData];
-    [bodyData appendData:boundaryData];
-    
-    return bodyData;
 }
 
 - (NSURL *)createBodyDataFileWithBoundary:(NSString *)boundary
