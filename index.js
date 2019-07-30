@@ -97,6 +97,19 @@ export const cancelUpload = (cancelUploadId: string): Promise<boolean> => {
 }
 
 /*
+Cancels all uploads.
+
+Event "cancelled" will be fired when upload is cancelled.
+
+Returns a promise with boolean true if operation was successfully completed.
+Will reject if there was an internal error or ID format is invalid.
+
+*/
+export const cancelAllUploads = (): Promise<boolean> => {
+  return NativeModule.cancelAllUploads();
+}
+
+/*
 Listens for the given event on the given upload ID (resolved from startUpload).  
 If you don't supply a value for uploadId, the event will fire for all uploads.
 Events (id is always the upload ID):

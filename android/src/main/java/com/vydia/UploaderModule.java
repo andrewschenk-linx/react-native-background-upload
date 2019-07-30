@@ -324,4 +324,19 @@ public class UploaderModule extends ReactContextBaseJavaModule {
     }
   }
 
+  /*
+   * Cancels all file uploads
+   * Event "cancelled" will be fired when upload is cancelled.
+   */
+  @ReactMethod
+  public void cancelAllUploads(final Promise promise) {
+    try {
+      UploadService.stopAllUploads();
+      promise.resolve(true);
+    } catch (Exception exc) {
+      Log.e(TAG, exc.getMessage(), exc);
+      promise.reject(exc);
+    }
+  }
+
 }

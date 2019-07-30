@@ -250,6 +250,19 @@ RCT_EXPORT_METHOD(cancelUpload: (NSString *)cancelUploadId resolve:(RCTPromiseRe
     resolve([NSNumber numberWithBool:YES]);
 }
 
+/*
+ * Cancels all file uploads
+ * Event "cancelled" will be fired when upload is cancelled.
+ */
+RCT_EXPORT_METHOD(cancelAllUploads:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject) {
+    [self.mySession getTasksWithCompletionHandler:^(NSArray *dataTasks, NSArray *uploadTasks, NSArray *downloadTasks) {
+        for (NSURLSessionTask *uploadTask in uploadTasks) {
+            [uploadTask cancel];
+        }
+    }];
+    resolve([NSNumber numberWithBool:YES]);
+}
+
 - (void)createBodyStreamWithBoundary:(NSString *)boundary
                                 path:(NSString *)path
                           parameters:(NSDictionary *)parameters
