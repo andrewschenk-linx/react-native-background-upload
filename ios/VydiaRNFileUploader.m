@@ -31,7 +31,7 @@ static NSString *BACKGROUND_SESSION_ID = @"ReactNativeBackgroundUpload";
         self.responsesData = [NSMutableDictionary dictionary];
         
         NSURLSessionConfiguration * config = [NSURLSessionConfiguration backgroundSessionConfigurationWithIdentifier:@"MyBackgroundSessionConfig"];
-        config.discretionary = YES;
+        //config.discretionary = YES;
         
         self.mySession = [NSURLSession sessionWithConfiguration:config
                                                        delegate:self
