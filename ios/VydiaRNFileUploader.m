@@ -20,6 +20,8 @@ static int uploadId = 0;
 static RCTEventEmitter* staticEventEmitter = nil;
 static NSString *BACKGROUND_SESSION_ID = @"ReactNativeBackgroundUpload";
 
+static float uploadProgress = 0.0;
+
 + (BOOL)requiresMainQueueSetup {
     return NO;
 }
@@ -368,7 +370,18 @@ totalBytesExpectedToSend:(int64_t)totalBytesExpectedToSend {
     {
         progress = (float)totalBytesSent / (float)totalBytesExpectedToSend;
     }
-    [self _sendEventWithName:@"RNFileUploader-progress" body:@{ @"id": task.taskDescription, @"progress": [NSNumber numberWithFloat:progress] }];
+    
+    // limit bridge talk to 1% increments
+    if (progress < uploadProgress) {
+        uploadProgress = progress;
+        [self _sendEventWithName:@"RNFileUploader-progress" body:@{ @"id": task.taskDescription, @"progress": [NSNumber numberWithFloat:progress] }];
+    } else if (progress > uploadProgress + 0.01) {
+        uploadProgress = progress;
+        [self _sendEventWithName:@"RNFileUploader-progress" body:@{ @"id": task.taskDescription, @"progress": [NSNumber numberWithFloat:progress] }];
+    } else if (progress >= 1.0) {
+        uploadProgress = progress;
+        [self _sendEventWithName:@"RNFileUploader-progress" body:@{ @"id": task.taskDescription, @"progress": [NSNumber numberWithFloat:progress] }];
+    }
 }
 
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data {
