@@ -294,7 +294,16 @@ RCT_EXPORT_METHOD(cancelAllUploads:(RCTPromiseResolveBlock)resolve reject:(RCTPr
     NSURL *temporaryDirectoryURL = [NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES];
     NSURL *fileURL = [temporaryDirectoryURL URLByAppendingPathComponent:@"tmpUploadData2"];
     
-    if (![[NSFileManager defaultManager] fileExistsAtPath:fileURL.path]) {
+    if ([[NSFileManager defaultManager] fileExistsAtPath:fileURL.path]) {
+        // delete this file.. we don't need it anymore
+        
+        NSError *deleteFileErr = nil;
+        [[NSFileManager defaultManager] removeItemAtPath:fileURL.path error:&deleteFileErr];
+        if (deleteFileErr) {
+            NSLog(@"error deleting tmp file --> %@", deleteFileErr);
+        }
+    }
+    if(![[NSFileManager defaultManager] fileExistsAtPath:fileURL.path]) {
         //NSLog(@"must make file before fileHandle tries writing");
         NSError *blankWriteErr = nil;
         [@"" writeToURL:fileURL atomically:YES encoding:NSUTF8StringEncoding error:&blankWriteErr];
@@ -358,6 +367,21 @@ didCompleteWithError:(NSError *)error {
             [self _sendEventWithName:@"RNFileUploader-error" body:data];
         }
     }
+    
+    
+    NSURL *temporaryDirectoryURL = [NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES];
+    NSURL *fileURL = [temporaryDirectoryURL URLByAppendingPathComponent:@"tmpUploadData2"];
+    
+    if ([[NSFileManager defaultManager] fileExistsAtPath:fileURL.path]) {
+        // delete this file.. we don't need it anymore
+        
+        NSError *deleteFileErr = nil;
+        [[NSFileManager defaultManager] removeItemAtPath:fileURL.path error:&deleteFileErr];
+        if (deleteFileErr) {
+            NSLog(@"error deleting tmp file --> %@", deleteFileErr);
+        }
+    }
+    
 }
 
 - (void)URLSession:(NSURLSession *)session
