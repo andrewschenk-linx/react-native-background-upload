@@ -395,11 +395,11 @@ totalBytesExpectedToSend:(int64_t)totalBytesExpectedToSend {
         progress = (float)totalBytesSent / (float)totalBytesExpectedToSend;
     }
     
-    // limit bridge talk to 1% increments
+    // limit bridge talk to 0.1% increments
     if (progress < uploadProgress) {
         uploadProgress = progress;
         [self _sendEventWithName:@"RNFileUploader-progress" body:@{ @"id": task.taskDescription, @"progress": [NSNumber numberWithFloat:progress] }];
-    } else if (progress > uploadProgress + 0.01) {
+    } else if (progress > uploadProgress + 0.001) {
         uploadProgress = progress;
         [self _sendEventWithName:@"RNFileUploader-progress" body:@{ @"id": task.taskDescription, @"progress": [NSNumber numberWithFloat:progress] }];
     } else if (progress >= 1.0) {
