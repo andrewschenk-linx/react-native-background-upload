@@ -1,7 +1,7 @@
 package com.vydia.RNUploader;
 
 import android.content.Context;
-import androidx.annotation.Nullable;
+import android.support.annotation.Nullable;
 import android.util.Log;
 import android.webkit.MimeTypeMap;
 
